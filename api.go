@@ -30,7 +30,8 @@ func (s *APIServer) Run() {
 	router := mux.NewRouter()
 
 	router.HandleFunc("/account", makeHTTPHandleFunc(s.handleAccount))
-	router.HandleFunc("/account/{id}", makeHTTPHandleFunc(s.handleGetAccountByID))
+	router.HandleFunc("/account/{id}", WithJWTAuth(makeHTTPHandleFunc(s.handleGetAccountByID)))
+	router.HandleFunc("/transfer", makeHTTPHandleFunc(s.handleTransfer))
 	log.Println("Http running on port: ", s.listenAddr)
 
 	http.ListenAndServe(s.listenAddr, router)
@@ -99,7 +100,11 @@ func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error {
-	return nil
+	transferReq := new(TransferRequest)
+	if err := json.NewDecoder(r.Body).Decode(transferReq); err != nil {
+		return err
+	}
+	return WriteJson(w, http.StatusOK, transferReq)
 }
 
 func WriteJson(w http.ResponseWriter, status int, v any) error {
@@ -124,4 +129,18 @@ func getID(r *http.Request) (int, error) {
 		return id, fmt.Errorf("Invalid id: %s", idStr)
 	}
 	return id, nil
+}
+
+func WithJWTAuth(handlerFunc http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("calling JWt auth middleware")
+
+		tokenString := r.Header.Get("x-auth-token")
+		_, err := ValidateToken(tokenString)
+		if err != nil {
+			WriteJson(w, http.StatusForbidden, ApiError{Error: "Invalid token"})
+			return
+		}
+		handlerFunc(w, r)
+	}
 }
